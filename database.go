@@ -85,15 +85,15 @@ func (d *DB) GetAll(table, filters, order string, limit, offset uint64, dest any
 	return nil
 }
 
-func (d *DB) getOne(table, filters, order string, limit, offset uint64, dest any, args ...any) error {
-	query := d.getSelectQuery(table, filters, order, limit, offset, dest)
+func (d *DB) getOne(table, filters string, dest any, args ...any) error {
+	query := d.getSelectQuery(table, filters, "", 0, 0, dest)
 
 	d.logger.Debug().Str("table_name", table).Str("get_one", query).Send()
 	return d.dbHandle.Get(dest, query, args...)
 }
 
-func (d *DB) GetOne(table, filters, order string, limit, offset uint64, dest any, args ...any) error {
-	err := d.getOne(table, filters, order, limit, offset, dest, args...)
+func (d *DB) GetOne(table, filters string, dest any, args ...any) error {
+	err := d.getOne(table, filters, dest, args...)
 	if err != nil {
 		d.logger.Err(err).Str("method", "get_one").Msg("")
 		return SelectError
