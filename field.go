@@ -18,9 +18,10 @@ const (
 )
 
 type fieldDB struct {
-	name string
-	def  string
-	join string
+	name  string
+	def   string
+	join  string
+	value any
 }
 
 func (f *fieldDB) toSelect() string {
@@ -41,56 +42,48 @@ func (f *fieldDB) toSelectWithDefault() string {
 	return fmt.Sprintf(`COALESCE(%s, %s) AS "%s"`, f.name, def, f.name)
 }
 
-func (f *fieldDB) toInsertName() string {
-	return fmt.Sprintf(`"%s"`, f.name)
-}
-
-func (f *fieldDB) toInsert() string {
-	return ":" + f.name
-}
-
-func (f *fieldDB) toUpdate() string {
-	return fmt.Sprintf(`"%s"=:%s`, f.name, f.name)
-}
-
-func parseFields(t reflect.Type) []*fieldDB {
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
+func parseFields(v reflect.Value) []*fieldDB {
+	if v.Kind() == reflect.Pointer {
+		v = v.Elem()
 	}
 
-	if t.Kind() != reflect.Struct {
+	if v.Kind() != reflect.Struct {
 		return nil
 	}
 
-	n := t.NumField()
+	n := v.NumField()
+	t := v.Type()
 	fields := make([]*fieldDB, 0, n)
 	for i := 0; i < n; i++ {
-		field := t.Field(i)
-		fieldName := field.Tag.Get(TagDB)
+		structField := t.Field(i)
+
+		fieldName := structField.Tag.Get(TagDB)
 		if fieldName == TagSkip || fieldName == TagEmpty {
 			continue
 		}
 
-		st := field.Type
-		if st.Kind() == reflect.Pointer {
-			st = st.Elem()
+		valueField := v.Field(i)
+
+		if valueField.Kind() == reflect.Pointer {
+			valueField = valueField.Elem()
 		}
 
-		if fieldName == "" && st.Kind() == reflect.Struct {
-			fields = append(fields, parseFields(st)...)
+		if fieldName == "" && valueField.Kind() == reflect.Struct {
+			fields = append(fields, parseFields(valueField)...)
 			continue
 		}
 
-		def := field.Tag.Get(TagDBDefault)
+		def := structField.Tag.Get(TagDBDefault)
 
 		if def == DefKeyUUID {
 			def = DefUUID
 		}
 
 		fieldData := &fieldDB{
-			name: fieldName,
-			def:  def,
-			join: field.Tag.Get(TagJoin),
+			name:  fieldName,
+			def:   def,
+			join:  structField.Tag.Get(TagJoin),
+			value: v.Field(i).Interface(),
 		}
 		fields = append(fields, fieldData)
 	}

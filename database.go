@@ -1,26 +1,22 @@
 package doomdb
 
 import (
+	"context"
 	"database/sql"
-	"database/sql/driver"
-	"fmt"
 	"math/rand"
-	"strconv"
-	"strings"
 
 	"github.com/DoomLordor/logger"
 
-	"github.com/lib/pq"
+	"github.com/Masterminds/squirrel"
 )
 
 type dbHandle interface {
 	Close() error
-	BindNamed(query string, arg any) (string, []any, error)
-	Select(dest interface{}, query string, args ...any) error
-	Get(dest interface{}, query string, args ...any) error
-	QueryRow(query string, args ...any) *sql.Row
-	NamedExec(query string, arg any) (sql.Result, error)
-	Query(query string, args ...any) (*sql.Rows, error)
+	SelectContext(ctx context.Context, dest interface{}, query string, args ...any) error
+	GetContext(ctx context.Context, dest interface{}, query string, args ...any) error
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
 }
 
 type DB struct {
@@ -43,41 +39,48 @@ func (d *DB) Close() error {
 	return d.dbHandle.Close()
 }
 
-func (d *DB) getSelectQuery(table, filters, order string, limit, offset uint64, dest any) string {
-	queryRaw := make([]string, 0, 20)
-	queryRaw = append(queryRaw, "SELECT", d.cache.getSelectFields(dest), "FROM", table, d.cache.getJoins(dest))
-	if filters != "" {
-		queryRaw = append(queryRaw, "WHERE")
-		queryRaw = append(queryRaw, filters)
+func (d *DB) queryBuilder() squirrel.StatementBuilderType {
+	return squirrel.StatementBuilder.PlaceholderFormat(squirrel.Dollar)
+}
+
+func (d *DB) getSelectQuery(table string, orders []string, limit, offset uint64, dest, filters any, args ...any) squirrel.SelectBuilder {
+
+	query := d.queryBuilder().Select(d.cache.getSelectFields(dest)...).From(table)
+
+	if filters != nil {
+		query = query.Where(filters, args...)
 	}
 
-	if order != "" {
-		queryRaw = append(queryRaw, "ORDER BY")
-		queryRaw = append(queryRaw, order)
+	for _, join := range d.cache.getJoins(dest) {
+		query = query.JoinClause(join)
 	}
+
+	query = query.OrderBy(orders...)
 
 	if limit > 0 {
-		queryRaw = append(queryRaw, "LIMIT")
-		queryRaw = append(queryRaw, strconv.FormatUint(limit, 10))
+		query = query.Limit(limit).Offset(offset)
 	}
 
 	if offset > 0 {
-		queryRaw = append(queryRaw, "OFFSET")
-		queryRaw = append(queryRaw, strconv.FormatUint(offset, 10))
+		query = query.Offset(offset)
 	}
 
-	return strings.Join(queryRaw, " ")
+	return query
 }
 
-func (d *DB) getAll(table, filters, order string, limit, offset uint64, dest any, args ...any) error {
-	query := d.getSelectQuery(table, filters, order, limit, offset, dest)
+func (d *DB) getAll(ctx context.Context, table string, orders []string, limit, offset uint64, dest, filters any, args ...any) error {
+	query := d.getSelectQuery(table, orders, limit, offset, dest, filters, args)
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
 
-	d.logger.Debug().Str("table_name", table).Str("get_all", query).Send()
-	return d.dbHandle.Select(dest, query, args...)
+	d.logger.Debug().Str("table_name", table).Str("get_all", sqlQuery).Send()
+	return d.dbHandle.SelectContext(ctx, dest, sqlQuery, args...)
 }
 
-func (d *DB) GetAll(table, filters, order string, limit, offset uint64, dest any, args ...any) error {
-	err := d.getAll(table, filters, order, limit, offset, dest, args...)
+func (d *DB) GetAll(ctx context.Context, table string, orders []string, limit, offset uint64, dest, filters any, args ...any) error {
+	err := d.getAll(ctx, table, orders, limit, offset, dest, filters, args...)
 	if err != nil {
 		d.logger.Err(err).Str("method", "get_all").Msg("")
 		return SelectError
@@ -85,15 +88,19 @@ func (d *DB) GetAll(table, filters, order string, limit, offset uint64, dest any
 	return nil
 }
 
-func (d *DB) getOne(table, filters string, dest any, args ...any) error {
-	query := d.getSelectQuery(table, filters, "", 0, 0, dest)
+func (d *DB) getOne(ctx context.Context, table string, dest, filters any, args ...any) error {
+	query := d.getSelectQuery(table, nil, 0, 0, dest, filters, args...)
+	sqlQuery, args, err := query.ToSql()
+	if err != nil {
+		return err
+	}
 
-	d.logger.Debug().Str("table_name", table).Str("get_one", query).Send()
-	return d.dbHandle.Get(dest, query, args...)
+	d.logger.Debug().Str("table_name", table).Str("get_one", sqlQuery).Send()
+	return d.dbHandle.GetContext(ctx, dest, sqlQuery, args...)
 }
 
-func (d *DB) GetOne(table, filters string, dest any, args ...any) error {
-	err := d.getOne(table, filters, dest, args...)
+func (d *DB) GetOne(ctx context.Context, table string, dest, filters any, args ...any) error {
+	err := d.getOne(ctx, table, dest, filters, args...)
 	if err != nil {
 		d.logger.Err(err).Str("method", "get_one").Msg("")
 		return SelectError
@@ -101,36 +108,31 @@ func (d *DB) GetOne(table, filters string, dest any, args ...any) error {
 	return nil
 }
 
-func (d *DB) create(table string, dest any) (uint64, error) {
+func (d *DB) create(ctx context.Context, table string, dest any) (uint64, error) {
+
 	fields, values := d.cache.getInsertFields(dest)
-	queryRaw := []string{
-		"INSERT INTO",
-		table,
-		fmt.Sprintf("(%s)", fields),
-		"VALUES",
-		fmt.Sprintf("(%s)", values),
-		"RETURNING id",
-	}
-	query := strings.Join(queryRaw, " ")
-	d.logger.Debug().Str("table_name", table).Str("create", query).Send()
-	queryNamed, args, err := d.dbHandle.BindNamed(query, dest)
+	query := d.queryBuilder().Insert(table).Suffix("RETURNING id").Columns(fields...).Values(values...)
+
+	querySql, args, err := query.ToSql()
 	if err != nil {
 		return 0, err
 	}
-	id := 0
-	err = d.dbHandle.QueryRow(queryNamed, args...).Scan(&id)
+	d.logger.Debug().Str("table_name", table).Str("create", querySql).Send()
+
+	var id uint64
+	err = d.dbHandle.QueryRowContext(ctx, querySql, args...).Scan(&id)
 
 	if err != nil {
 		return 0, err
 	}
-	return uint64(id), nil
+	return id, nil
 }
 
-func (d *DB) Create(table string, dest any) (uint64, error) {
+func (d *DB) Create(ctx context.Context, table string, dest any) (uint64, error) {
 	if d.selectOnly {
 		return rand.Uint64(), nil
 	}
-	id, err := d.create(table, dest)
+	id, err := d.create(ctx, table, dest)
 	if err != nil {
 		d.logger.Err(err).Send()
 		return 0, CreateError
@@ -138,46 +140,48 @@ func (d *DB) Create(table string, dest any) (uint64, error) {
 	return id, nil
 }
 
-func (d *DB) update(table string, dest any, id uint64) (sql.Result, error) {
-	fields := d.cache.getUpdateFields(dest)
-	queryRaw := []string{
-		"UPDATE",
-		table,
-		"SET",
-		fields,
-		fmt.Sprintf(" WHERE id=%d", id),
+func (d *DB) update(ctx context.Context, table, fieldName string, value, dest any) (sql.Result, error) {
+	fields := d.cache.get(dest, true)
+	query := d.queryBuilder().Update(table).Where(fieldName, value)
+
+	for _, field := range fields {
+		query = query.Set(field.name, field.value)
 	}
-	query := strings.Join(queryRaw, " ")
-	d.logger.Debug().Str("table_name", table).Str("update", query).Send()
-	return d.dbHandle.NamedExec(query, dest)
+	querySql, args, err := query.ToSql()
+	if err != nil {
+		return nil, err
+	}
+	d.logger.Debug().Str("table_name", table).Str("update", querySql).Send()
+	return d.dbHandle.ExecContext(ctx, querySql, args)
 }
 
-func (d *DB) Update(table string, arg any, id uint64) (sql.Result, error) {
+func (d *DB) Update(ctx context.Context, table, fieldName string, value, dest any) (sql.Result, error) {
 	if d.selectOnly {
 		return nil, nil
 	}
-	res, err := d.update(table, arg, id)
+	res, err := d.update(ctx, table, fieldName, value, dest)
 	if err != nil {
 		d.logger.Err(err).Str("method", "update").Msg("")
 		return nil, UpdateError
 	}
+
 	return res, nil
 }
 
-func (d *DB) query(query string, arg ...any) error {
-	_, err := d.dbHandle.Query(query, arg...)
+func (d *DB) query(ctx context.Context, query string, arg ...any) error {
+	_, err := d.dbHandle.QueryContext(ctx, query, arg...)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (d *DB) Query(query string, arg ...any) error {
+func (d *DB) Query(ctx context.Context, query string, arg ...any) error {
 	if d.selectOnly {
 		return nil
 	}
 	d.logger.Debug().Str("query", query).Send()
-	err := d.query(query, arg...)
+	err := d.query(ctx, query, arg...)
 	if err != nil {
 		d.logger.Err(err).Send()
 		return QueryError
@@ -185,28 +189,26 @@ func (d *DB) Query(query string, arg ...any) error {
 	return nil
 }
 
-func (d *DB) Delete(table, fieldName string, arg any) error {
+func (d *DB) delete(ctx context.Context, table, fieldName string, arg any) error {
 	if d.selectOnly {
 		return nil
 	}
-	queryRaw := []string{
-		"DELETE FROM",
-		table,
-		fmt.Sprintf(`WHERE "%s" = $1`, fieldName),
+
+	query := d.queryBuilder().Delete(table).Where(fieldName, arg)
+	querySql, args, err := query.ToSql()
+	if err != nil {
+		return err
 	}
-	query := strings.Join(queryRaw, " ")
-	d.logger.Debug().Str("delete", query).Send()
-	err := d.query(query, arg)
+
+	d.logger.Debug().Str("delete", querySql).Send()
+	return d.query(ctx, querySql, args...)
+}
+
+func (d *DB) Delete(ctx context.Context, table, fieldName string, arg any) error {
+	err := d.delete(ctx, table, fieldName, arg)
 	if err != nil {
 		d.logger.Err(err).Send()
 		return DeleteError
 	}
 	return nil
-}
-
-func (d *DB) Array(a any) interface {
-	driver.Valuer
-	sql.Scanner
-} {
-	return pq.Array(a)
 }

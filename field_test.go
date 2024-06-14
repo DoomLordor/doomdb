@@ -26,17 +26,6 @@ func TestFieldDB(t *testing.T) {
 		t.Error(`select wrong`)
 	}
 
-	if field.toInsertName() != `"test_name"` {
-		t.Error(`insert name wrong`)
-	}
-
-	if field.toInsert() != `:test_name` {
-		t.Error(`insert wrong`)
-	}
-
-	if field.toUpdate() != `test_name=:test_name` {
-		t.Error(`update wrong`)
-	}
 }
 
 func TestFieldDBWithDefault(t *testing.T) {
@@ -51,21 +40,10 @@ func TestFieldDBWithDefault(t *testing.T) {
 		t.Error(`select with default wrong`)
 	}
 
-	if field.toInsertName() != `"test_name"` {
-		t.Error(`insert name with default wrong`)
-	}
-
-	if field.toInsert() != `:test_name` {
-		t.Error(`insert with default wrong`)
-	}
-
-	if field.toUpdate() != `test_name=:test_name` {
-		t.Error(`update with default wrong`)
-	}
 }
 
 func TestParseValidate(t *testing.T) {
-	ref := reflect.TypeOf(any(0))
+	ref := reflect.ValueOf(any(0))
 	fields := parseFields(ref)
 	if fields != nil {
 		t.Fatal("work with a non struct type")
@@ -73,7 +51,7 @@ func TestParseValidate(t *testing.T) {
 }
 
 func TestParseLen(t *testing.T) {
-	ref := reflect.TypeOf(testFields{})
+	ref := reflect.ValueOf(testFields{})
 
 	fields := parseFields(ref)
 
@@ -84,7 +62,7 @@ func TestParseLen(t *testing.T) {
 
 func TestParseName(t *testing.T) {
 
-	ref := reflect.TypeOf(&testFields{})
+	ref := reflect.ValueOf(&testFields{})
 
 	fields := parseFields(ref)
 
@@ -117,7 +95,7 @@ func TestParseName(t *testing.T) {
 
 func TestParseDefault(t *testing.T) {
 
-	ref := reflect.TypeOf(&testFields{})
+	ref := reflect.ValueOf(&testFields{})
 
 	fields := parseFields(ref)
 
@@ -150,7 +128,7 @@ func TestParseDefault(t *testing.T) {
 
 func TestParseJoin(t *testing.T) {
 
-	ref := reflect.TypeOf(&testFields{})
+	ref := reflect.ValueOf(&testFields{})
 
 	fields := parseFields(ref)
 

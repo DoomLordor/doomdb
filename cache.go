@@ -2,7 +2,6 @@ package doomdb
 
 import (
 	"reflect"
-	"strings"
 	"sync"
 )
 
@@ -18,17 +17,31 @@ func newCache() *cacheFieldsDB {
 	}
 }
 
-func (c *cacheFieldsDB) get(dest any) []*fieldDB {
-	t := reflect.TypeOf(dest)
-	if t.Kind() == reflect.Pointer {
-		t = t.Elem()
+func (c *cacheFieldsDB) get(dest any, withValue bool) []*fieldDB {
+	v := reflect.ValueOf(dest)
+	if v.Kind() == reflect.Pointer {
+		v = v.Elem()
 	}
-	if t.Kind() == reflect.Slice {
-		t = t.Elem()
-		if t.Kind() == reflect.Pointer {
-			t = t.Elem()
+
+	if v.Kind() == reflect.Slice {
+		if v.Len() == 0 {
+			t := v.Type().Elem()
+			if t.Kind() == reflect.Pointer {
+				t = t.Elem()
+			}
+			v = reflect.New(t)
+		} else {
+			v = v.Index(0)
+			if v.Kind() == reflect.Pointer {
+				v = v.Elem()
+			}
 		}
 	}
+
+	if withValue {
+		return parseFields(v)
+	}
+	t := v.Type()
 
 	c.mu.RLock()
 	fields, ok := c.structs[t.Name()]
@@ -37,7 +50,7 @@ func (c *cacheFieldsDB) get(dest any) []*fieldDB {
 		return fields
 	}
 
-	fields = parseFields(t)
+	fields = parseFields(v)
 
 	c.mu.Lock()
 	c.structs[t.Name()] = fields
@@ -45,18 +58,18 @@ func (c *cacheFieldsDB) get(dest any) []*fieldDB {
 	return fields
 }
 
-func (c *cacheFieldsDB) getSelectFields(dest any) string {
-	fields := c.get(dest)
+func (c *cacheFieldsDB) getSelectFields(dest any) []string {
+	fields := c.get(dest, false)
 	res := make([]string, 0, len(fields))
 	for _, field := range fields {
 		res = append(res, field.toSelect())
 	}
 
-	return strings.Join(res, ", ")
+	return res
 }
 
-func (c *cacheFieldsDB) getJoins(dest any) string {
-	fields := c.get(dest)
+func (c *cacheFieldsDB) getJoins(dest any) []string {
+	fields := c.get(dest, false)
 	res := make([]string, 0, len(fields))
 	for _, field := range fields {
 
@@ -65,27 +78,17 @@ func (c *cacheFieldsDB) getJoins(dest any) string {
 		}
 	}
 
-	return strings.Join(res, " ")
+	return res
 }
 
-func (c *cacheFieldsDB) getInsertFields(dest any) (string, string) {
-	fields := c.get(dest)
+func (c *cacheFieldsDB) getInsertFields(dest any) ([]string, []any) {
+	fields := c.get(dest, true)
 	resFields := make([]string, 0, len(fields))
-	resValues := make([]string, 0, len(fields))
+	resValues := make([]any, 0, len(fields))
 	for _, field := range fields {
-		resFields = append(resFields, field.toInsertName())
-		resValues = append(resValues, field.toInsert())
+		resFields = append(resFields, field.name)
+		resValues = append(resValues, field.value)
 	}
 
-	return strings.Join(resFields, ", "), strings.Join(resValues, ", ")
-}
-
-func (c *cacheFieldsDB) getUpdateFields(dest any) string {
-	fields := c.get(dest)
-	res := make([]string, 0, len(fields))
-	for _, field := range fields {
-		res = append(res, field.toUpdate())
-	}
-
-	return strings.Join(res, ", ")
+	return resFields, resValues
 }
