@@ -85,6 +85,7 @@ func (d *DB) GetAll(ctx context.Context, table string, orders []string, limit, o
 		d.logger.Err(err).Str("method", "get_all").Msg("")
 		return SelectError
 	}
+
 	return nil
 }
 
@@ -105,6 +106,7 @@ func (d *DB) GetOne(ctx context.Context, table string, dest, filters any, args .
 		d.logger.Err(err).Str("method", "get_one").Msg("")
 		return SelectError
 	}
+
 	return nil
 }
 
@@ -121,10 +123,10 @@ func (d *DB) create(ctx context.Context, table string, dest any) (uint64, error)
 
 	var id uint64
 	err = d.dbHandle.QueryRowContext(ctx, querySql, args...).Scan(&id)
-
 	if err != nil {
 		return 0, err
 	}
+
 	return id, nil
 }
 
@@ -137,6 +139,7 @@ func (d *DB) Create(ctx context.Context, table string, dest any) (uint64, error)
 		d.logger.Err(err).Send()
 		return 0, CreateError
 	}
+
 	return id, nil
 }
 
@@ -147,12 +150,14 @@ func (d *DB) update(ctx context.Context, table, fieldName string, value, dest an
 	for _, field := range fields {
 		query = query.Set(field.name, field.value)
 	}
+
 	querySql, args, err := query.ToSql()
 	if err != nil {
 		return nil, err
 	}
+
 	d.logger.Debug().Str("table_name", table).Str("update", querySql).Send()
-	return d.dbHandle.ExecContext(ctx, querySql, args)
+	return d.dbHandle.ExecContext(ctx, querySql, args...)
 }
 
 func (d *DB) Update(ctx context.Context, table, fieldName string, value, dest any) (sql.Result, error) {
@@ -173,6 +178,7 @@ func (d *DB) query(ctx context.Context, query string, arg ...any) error {
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -186,6 +192,7 @@ func (d *DB) Query(ctx context.Context, query string, arg ...any) error {
 		d.logger.Err(err).Send()
 		return QueryError
 	}
+
 	return nil
 }
 
@@ -201,6 +208,7 @@ func (d *DB) delete(ctx context.Context, table, fieldName string, arg any) error
 	}
 
 	d.logger.Debug().Str("delete", querySql).Send()
+
 	return d.query(ctx, querySql, args...)
 }
 
@@ -210,5 +218,6 @@ func (d *DB) Delete(ctx context.Context, table, fieldName string, arg any) error
 		d.logger.Err(err).Send()
 		return DeleteError
 	}
+
 	return nil
 }
