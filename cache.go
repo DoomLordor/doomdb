@@ -30,6 +30,9 @@ func (c *cacheFieldsDB) get(dest any, withValue bool) []*fieldDB {
 				t = t.Elem()
 			}
 			v = reflect.New(t)
+			if v.Kind() == reflect.Pointer {
+				v = v.Elem()
+			}
 		} else {
 			v = v.Index(0)
 			if v.Kind() == reflect.Pointer {
