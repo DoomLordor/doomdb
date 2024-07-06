@@ -75,14 +75,14 @@ func (d *DB) getAll(ctx context.Context, table string, orders []string, limit, o
 		return err
 	}
 
-	d.logger.Debug().Str("table_name", table).Str("get_all", sqlQuery).Send()
+	d.logger.Debug().Str("table_name", table).Str("table_name", table).Str("get_all", sqlQuery).Send()
 	return d.dbHandle.SelectContext(ctx, dest, sqlQuery, args...)
 }
 
 func (d *DB) GetAll(ctx context.Context, table string, orders []string, limit, offset uint64, dest, filters any, args ...any) error {
 	err := d.getAll(ctx, table, orders, limit, offset, dest, filters, args...)
 	if err != nil {
-		d.logger.Err(err).Str("method", "get_all").Msg("")
+		d.logger.Err(err).Str("table_name", table).Str("method", "get_all").Msg("")
 		return SelectError
 	}
 
@@ -103,7 +103,7 @@ func (d *DB) getOne(ctx context.Context, table string, dest, filters any, args .
 func (d *DB) GetOne(ctx context.Context, table string, dest, filters any, args ...any) error {
 	err := d.getOne(ctx, table, dest, filters, args...)
 	if err != nil {
-		d.logger.Err(err).Str("method", "get_one").Msg("")
+		d.logger.Err(err).Str("table_name", table).Str("method", "get_one").Msg("")
 		return SelectError
 	}
 
@@ -136,7 +136,7 @@ func (d *DB) Create(ctx context.Context, table string, dest any) (uint64, error)
 	}
 	id, err := d.create(ctx, table, dest)
 	if err != nil {
-		d.logger.Err(err).Send()
+		d.logger.Err(err).Str("table_name", table).Send()
 		return 0, CreateError
 	}
 
@@ -166,7 +166,7 @@ func (d *DB) Update(ctx context.Context, table, fieldName string, value, dest an
 	}
 	res, err := d.update(ctx, table, fieldName, value, dest)
 	if err != nil {
-		d.logger.Err(err).Str("method", "update").Msg("")
+		d.logger.Err(err).Str("table_name", table).Str("method", "update").Send()
 		return nil, UpdateError
 	}
 
@@ -207,7 +207,7 @@ func (d *DB) delete(ctx context.Context, table, fieldName string, arg any) error
 		return err
 	}
 
-	d.logger.Debug().Str("delete", querySql).Send()
+	d.logger.Debug().Str("table_name", table).Str("delete", querySql).Send()
 
 	return d.query(ctx, querySql, args...)
 }
@@ -215,7 +215,7 @@ func (d *DB) delete(ctx context.Context, table, fieldName string, arg any) error
 func (d *DB) Delete(ctx context.Context, table, fieldName string, arg any) error {
 	err := d.delete(ctx, table, fieldName, arg)
 	if err != nil {
-		d.logger.Err(err).Send()
+		d.logger.Err(err).Str("table", table).Send()
 		return DeleteError
 	}
 

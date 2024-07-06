@@ -65,6 +65,9 @@ func (c *cacheFieldsDB) getSelectFields(dest any) []string {
 	fields := c.get(dest, false)
 	res := make([]string, 0, len(fields))
 	for _, field := range fields {
+		if field.name == "" {
+			continue
+		}
 		res = append(res, field.toSelect())
 	}
 
@@ -75,10 +78,10 @@ func (c *cacheFieldsDB) getJoins(dest any) []string {
 	fields := c.get(dest, false)
 	res := make([]string, 0, len(fields))
 	for _, field := range fields {
-
-		if field.join != "" {
-			res = append(res, field.join)
+		if field.join == "" {
+			continue
 		}
+		res = append(res, field.join)
 	}
 
 	return res

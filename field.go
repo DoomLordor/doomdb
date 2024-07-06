@@ -11,7 +11,6 @@ const (
 	TagDBDefault = "default"
 	TagSkip      = "-"
 	TagJoin      = "join"
-	TagEmpty     = ""
 
 	DefKeyUUID = "uuid"
 	DefUUID    = "00000000-0000-0000-0000-000000000000"
@@ -58,7 +57,7 @@ func parseFields(v reflect.Value) []*fieldDB {
 		structField := t.Field(i)
 
 		fieldName := structField.Tag.Get(TagDB)
-		if fieldName == TagSkip || fieldName == TagEmpty {
+		if fieldName == TagSkip {
 			continue
 		}
 
