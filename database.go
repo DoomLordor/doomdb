@@ -145,7 +145,7 @@ func (d *DB) Create(ctx context.Context, table string, dest any) (uint64, error)
 
 func (d *DB) update(ctx context.Context, table, fieldName string, value, dest any) (sql.Result, error) {
 	fields := d.cache.get(dest, true)
-	query := d.queryBuilder().Update(table).Where(fieldName, value)
+	query := d.queryBuilder().Update(table).Where(squirrel.Eq{fieldName: value})
 
 	for _, field := range fields {
 		query = query.Set(field.name, field.value)

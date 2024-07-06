@@ -64,12 +64,14 @@ func parseFields(v reflect.Value) []*fieldDB {
 		valueField := v.Field(i)
 
 		if valueField.Kind() == reflect.Pointer {
-			valueField = valueField.Elem()
-		}
-
-		if fieldName == "" && valueField.Kind() == reflect.Struct {
-			fields = append(fields, parseFields(valueField)...)
-			continue
+			if valueField.IsNil() {
+				valueField = reflect.New(structField.Type.Elem())
+				if valueField.Kind() == reflect.Pointer {
+					valueField = valueField.Elem()
+				}
+			} else {
+				valueField = valueField.Elem()
+			}
 		}
 
 		def := structField.Tag.Get(TagDBDefault)
@@ -85,6 +87,10 @@ func parseFields(v reflect.Value) []*fieldDB {
 			value: v.Field(i).Interface(),
 		}
 		fields = append(fields, fieldData)
+
+		if fieldName == "" && valueField.Kind() == reflect.Struct {
+			fields = append(fields, parseFields(valueField)...)
+		}
 	}
 
 	return fields
