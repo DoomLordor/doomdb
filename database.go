@@ -110,10 +110,14 @@ func (d *DB) GetOne(ctx context.Context, table string, dest, filters any, args .
 	return nil
 }
 
-func (d *DB) create(ctx context.Context, table string, dest any) (uint64, error) {
+func (d *DB) create(ctx context.Context, table string, dest any, withId bool) (uint64, error) {
 
 	fields, values := d.cache.getInsertFields(dest)
-	query := d.queryBuilder().Insert(table).Suffix("RETURNING id").Columns(fields...).Values(values...)
+	query := d.queryBuilder().Insert(table).Columns(fields...).Values(values...)
+
+	if withId {
+		query = query.Suffix("RETURNING id")
+	}
 
 	querySql, args, err := query.ToSql()
 	if err != nil {
@@ -122,19 +126,26 @@ func (d *DB) create(ctx context.Context, table string, dest any) (uint64, error)
 	d.logger.Debug().Str("table_name", table).Str("create", querySql).Send()
 
 	var id uint64
-	err = d.dbHandle.QueryRowContext(ctx, querySql, args...).Scan(&id)
+	row, err := d.dbHandle.QueryContext(ctx, querySql, args...)
 	if err != nil {
 		return 0, err
+	}
+
+	if withId {
+		err = row.Scan(&id)
+		if err != nil {
+			return 0, err
+		}
 	}
 
 	return id, nil
 }
 
-func (d *DB) Create(ctx context.Context, table string, dest any) (uint64, error) {
+func (d *DB) Create(ctx context.Context, table string, dest any, withId bool) (uint64, error) {
 	if d.selectOnly {
 		return rand.Uint64(), nil
 	}
-	id, err := d.create(ctx, table, dest)
+	id, err := d.create(ctx, table, dest, withId)
 	if err != nil {
 		d.logger.Err(err).Str("table_name", table).Send()
 		return 0, CreateError
